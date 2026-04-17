@@ -1,4 +1,4 @@
-# NetPulse — Surveillance Réseau Kubernetes
+#  Surveillance Réseau Kubernetes
 ### Projet DevOps — Collège Boréal | AWS + Terraform + Ansible + K8s + Cilium + Hubble + Prometheus + Grafana
 
 ---
