@@ -6,7 +6,7 @@
 # - Remédiation automatique si CrashLoopBackOff détecté
 # - Génération du token join pour le worker
 
-- name: Bootstrap du control plane Kubernetes
+- name: control plane Kubernetes
   hosts: master
   become: true
 

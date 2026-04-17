@@ -86,7 +86,7 @@ step_config() {
 
   ansible-playbook \
     -i ansible/inventory.ini \
-    ansible/playbook.yml \
+    ansible/site.yml \
     --timeout=600 \
     -v
 
