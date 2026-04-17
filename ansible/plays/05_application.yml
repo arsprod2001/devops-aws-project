@@ -1,0 +1,121 @@
+# plays/05_application.yml
+# Play 5 : Déploiement de l'application NetPulse (MASTER uniquement)
+# - Transfert des 6 manifests Kubernetes
+# - PersistentVolume PostgreSQL sur le worker
+# - Application dans l'ordre numérique (01 → 06)
+# - Attente que tous les pods soient Ready
+# - Rapport final complet + URLs d'accès
+
+- name: Deploiement de la plateforme NetPulse
+  hosts: master
+  become_user: ubuntu
+  gather_facts: false
+
+  tasks:
+
+    # ── Préparation ────────────────────────────────────────────
+    - name: Creer le repertoire de travail pour les manifests
+      ansible.builtin.file:
+        path: /home/ubuntu/k8s-manifests
+        state: directory
+
+    - name: Transferer les manifests Kubernetes
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../k8s/"
+        dest: /home/ubuntu/k8s-manifests/
+      ignore_errors: true
+
+    # ── PersistentVolume PostgreSQL ────────────────────────────
+    - name: Identifier le noeud worker
+      ansible.builtin.shell: |
+        kubectl get nodes \
+          --selector='!node-role.kubernetes.io/control-plane' \
+          -o jsonpath='{.items[0].metadata.name}'
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: worker_node_name
+
+    - name: Creer le PersistentVolume PostgreSQL sur le worker
+      ansible.builtin.shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: PersistentVolume
+        metadata:
+          name: postgres-pv
+        spec:
+          capacity:
+            storage: 2Gi
+          accessModes:
+            - ReadWriteOnce
+          hostPath:
+            path: /mnt/data/postgres
+          nodeAffinity:
+            required:
+              nodeSelectorTerms:
+              - matchExpressions:
+                - key: kubernetes.io/hostname
+                  operator: In
+                  values:
+                  - {{ worker_node_name.stdout }}
+        EOF
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      when: worker_node_name.stdout != ""
+
+    # ── Déploiement des manifests ──────────────────────────────
+    - name: Appliquer les manifests dans l ordre numerique
+      ansible.builtin.shell: |
+        for file in /home/ubuntu/k8s-manifests/*.yaml; do
+          echo "Applying $file..."
+          kubectl apply -f "$file"
+        done
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      ignore_errors: true
+
+    - name: Attendre que tous les pods netpulse soient Ready
+      ansible.builtin.shell: |
+        kubectl wait --for=condition=ready pod \
+          --all -n netpulse --timeout=300s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: wait_result
+      failed_when: false
+
+    # ── Rapport final ──────────────────────────────────────────
+    - name: Rapport de deploiement complet
+      ansible.builtin.shell: |
+        echo "=== NOEUDS ==="
+        kubectl get nodes -o wide
+        echo ""
+        echo "=== PODS netpulse ==="
+        kubectl get pods -n netpulse -o wide
+        echo ""
+        echo "=== PODS monitoring ==="
+        kubectl get pods -n monitoring --no-headers | head -10
+        echo ""
+        echo "=== SERVICES netpulse ==="
+        kubectl get svc -n netpulse
+        echo ""
+        echo "=== CILIUM ==="
+        cilium status --brief 2>/dev/null \
+          || kubectl get pods -n kube-system -l k8s-app=cilium
+        echo ""
+        echo "=== NETWORK POLICIES ==="
+        kubectl get ciliumnetworkpolicies -n netpulse
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: final_status
+      ignore_errors: true
+
+    - name: Afficher le rapport
+      ansible.builtin.debug:
+        msg: "{{ final_status.stdout_lines }}"
+
+    - name: URLs d acces
+      ansible.builtin.debug:
+        msg:
+          - "NetPulse  : http://{{ ansible_host }}:30000"
+          - "Grafana   : http://{{ ansible_host }}:31000  (admin / netpulse2025)"
+          - "Prometheus: http://{{ ansible_host }}:31001"
+          - "Hubble UI : cilium hubble port-forward && hubble observe -n netpulse --follow"

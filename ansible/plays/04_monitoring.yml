@@ -1,0 +1,100 @@
+# plays/04_monitoring.yml
+# Play 4 : Stack de monitoring (MASTER uniquement)
+# - Namespaces monitoring + netpulse
+# - kube-prometheus-stack via Helm (Prometheus + Grafana + AlertManager + Node Exporter)
+# - PodMonitors Cilium et Hubble pour collecter les métriques réseau
+
+- name: Installation du stack de monitoring
+  hosts: master
+  become_user: ubuntu
+  gather_facts: false
+
+  tasks:
+
+    # ── Namespaces ─────────────────────────────────────────────
+    - name: Creer les namespaces monitoring et netpulse
+      ansible.builtin.shell: |
+        kubectl create namespace monitoring \
+          --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create namespace netpulse \
+          --dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    # ── kube-prometheus-stack ──────────────────────────────────
+    - name: Ajouter le repo Helm prometheus-community
+      ansible.builtin.shell: |
+        helm repo add prometheus-community \
+          https://prometheus-community.github.io/helm-charts
+        helm repo update
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Deployer kube-prometheus-stack
+      ansible.builtin.shell: |
+        helm upgrade --install kube-prometheus-stack \
+          prometheus-community/kube-prometheus-stack \
+          --namespace monitoring \
+          --set grafana.enabled=true \
+          --set grafana.adminPassword=netpulse2025 \
+          --set grafana.service.type=NodePort \
+          --set grafana.service.nodePort=31000 \
+          --set prometheus.service.type=NodePort \
+          --set prometheus.service.nodePort=31001 \
+          --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
+          --set prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false \
+          --wait \
+          --timeout=10m
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    # ── PodMonitors Cilium + Hubble ────────────────────────────
+    - name: Creer les PodMonitors pour Cilium et Hubble Relay
+      ansible.builtin.shell: |
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: monitoring.coreos.com/v1
+        kind: PodMonitor
+        metadata:
+          name: cilium-agent
+          namespace: monitoring
+          labels:
+            release: kube-prometheus-stack
+        spec:
+          selector:
+            matchLabels:
+              k8s-app: cilium
+          namespaceSelector:
+            matchNames:
+              - kube-system
+          podMetricsEndpoints:
+            - port: prometheus
+              interval: 15s
+              path: /metrics
+        ---
+        apiVersion: monitoring.coreos.com/v1
+        kind: PodMonitor
+        metadata:
+          name: hubble-relay
+          namespace: monitoring
+          labels:
+            release: kube-prometheus-stack
+        spec:
+          selector:
+            matchLabels:
+              k8s-app: hubble-relay
+          namespaceSelector:
+            matchNames:
+              - kube-system
+          podMetricsEndpoints:
+            - port: prometheus
+              interval: 15s
+              path: /metrics
+        EOF
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Confirmer le monitoring
+      ansible.builtin.debug:
+        msg:
+          - "Grafana    : http://{{ ansible_host }}:31000  (admin / netpulse2025)"
+          - "Prometheus : http://{{ ansible_host }}:31001"

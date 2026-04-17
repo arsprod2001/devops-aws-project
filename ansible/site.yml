@@ -1,0 +1,16 @@
+# site.yml — Point d'entrée principal NetPulse
+# Lancement : ansible-playbook -i inventory.ini site.yml
+# Chaque play est dans son propre fichier pour la lisibilité
+#
+# Ordre d'exécution :
+#   1. Préparation système (master + worker)
+#   2. Bootstrap control plane + Cilium (master)
+#   3. Enregistrement du worker
+#   4. Stack monitoring Prometheus + Grafana (master)
+#   5. Déploiement application NetPulse (master)
+
+- import_playbook: plays/01_preparation.yml
+- import_playbook: plays/02_master.yml
+- import_playbook: plays/03_worker.yml
+- import_playbook: plays/04_monitoring.yml
+- import_playbook: plays/05_application.yml

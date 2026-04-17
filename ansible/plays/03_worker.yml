@@ -1,0 +1,31 @@
+# plays/03_worker.yml
+# Play 3 : Enregistrement du noeud worker dans le cluster
+# - Lit le token join généré par le master (Play 2)
+# - Exécute kubeadm join
+# - Idempotent : skip si kubelet.conf existe déjà
+
+- name: Enregistrement du worker dans le cluster
+  hosts: workers
+  become: true
+
+  tasks:
+
+    - name: Verifier si le worker est deja membre du cluster
+      ansible.builtin.stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_conf
+
+    - name: Lire la commande join depuis la machine locale
+      ansible.builtin.set_fact:
+        join_cmd: "{{ lookup('file', '/tmp/k8s_join_command.sh') }}"
+      when: not kubelet_conf.stat.exists
+
+    - name: Executer kubeadm join
+      ansible.builtin.shell: |
+        {{ join_cmd }} --ignore-preflight-errors=NumCPU,Mem
+      when: not kubelet_conf.stat.exists
+      register: join_result
+
+    - name: Resultat de l enregistrement
+      ansible.builtin.debug:
+        msg: "{{ join_result.stdout_lines | default(['Worker deja enregistre']) }}"

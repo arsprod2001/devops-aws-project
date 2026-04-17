@@ -1,0 +1,101 @@
+# plays/01_preparation.yml
+# Play 1 : Préparation des noeuds (master + worker)
+# Installe Docker, Kubernetes 1.29 et Helm sur les deux machines
+# Approche : blocs shell compacts plutôt que modules apt_key/apt_repository séparés
+
+- name: Preparation des noeuds du cluster
+  hosts: k8s
+  become: true
+  gather_facts: true
+
+  tasks:
+    # ── Nettoyage et outils de base ────────────────────────────
+    - name: Liberer le verrou apt
+      ansible.builtin.shell: |
+        pkill -9 -e -x "apt|apt-get|dpkg" 2>/dev/null
+        find /var/lib/dpkg -name "lock*" -delete 2>/dev/null
+        dpkg --configure -a 2>/dev/null
+      failed_when: false
+      changed_when: false
+
+    # ── Docker + containerd ────────────────────────────────────
+    - name: Installer Docker Engine et configurer containerd
+      ansible.builtin.shell: |
+        # Clé GPG Docker (format moderne gpg --dearmor)
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+          | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        chmod a+r /etc/apt/keyrings/docker.gpg
+
+        # Dépôt Docker dans sources.list.d
+        echo \
+          "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] \
+          https://download.docker.com/linux/ubuntu \
+          $(lsb_release -cs) stable" \
+          > /etc/apt/sources.list.d/docker.list
+
+        # Installation Docker + containerd
+        apt-get update -y
+        apt-get install -y docker-ce docker-ce-cli containerd.io
+
+        # Configuration containerd — SystemdCgroup=true requis par K8s
+        rm -f /etc/containerd/config.toml
+        containerd config default > /etc/containerd/config.toml
+        sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' \
+          /etc/containerd/config.toml
+
+        # Redémarrage et activation des services
+        systemctl daemon-reload
+        systemctl restart containerd
+        systemctl enable --now docker
+
+        # Accès Docker sans sudo pour l'utilisateur ubuntu
+        usermod -aG docker ubuntu
+      args:
+        creates: /usr/bin/docker
+      retries: 2
+      delay: 15
+
+    # ── Kubernetes + Helm ──────────────────────────────────────
+    - name: Installer Kubernetes 1.29 et Helm 3
+      ansible.builtin.shell: |
+        # Clé GPG Kubernetes
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key \
+          | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+        # Dépôt Kubernetes
+        echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] \
+          https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /" \
+          > /etc/apt/sources.list.d/kubernetes.list
+
+        # Installation kubeadm kubelet kubectl
+        apt-get update -y
+        apt-get install -y kubelet kubeadm kubectl
+
+        # Geler les versions pour éviter les MAJ automatiques cassantes
+        apt-mark hold kubelet kubeadm kubectl
+
+        # Activer kubelet
+        systemctl enable --now kubelet
+
+        # Helm 3 via script officiel
+        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      args:
+        creates: /usr/bin/kubeadm
+      retries: 2
+      delay: 15
+
+    # ── Vérification ───────────────────────────────────────────
+    - name: Verifier les versions installees sur chaque noeud
+      ansible.builtin.shell: |
+        echo "=== $(hostname) ==="
+        docker  --version
+        kubelet --version
+        kubeadm version -o short
+        helm    version --short
+      register: node_versions
+      changed_when: false
+      failed_when: false
+
+    - name: Afficher les versions
+      ansible.builtin.debug:
+        msg: "{{ node_versions.stdout_lines }}"
