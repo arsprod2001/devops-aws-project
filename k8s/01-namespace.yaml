@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: netpulse
+  labels:
+    name: netpulse
+    environment: dev
+    # Ce label est utilisé par Cilium pour les NetworkPolicies
+    pod-security.kubernetes.io/enforce: baseline

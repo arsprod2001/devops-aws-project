@@ -1,0 +1,192 @@
+# ════════════════════════════════════════════════════════════════
+# GRAFANA — Dashboard NetPulse provisionné automatiquement
+# Ce ConfigMap est monté dans Grafana comme dashboard JSON.
+# Grafana le charge au démarrage sans intervention manuelle.
+# ════════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-netpulse
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"   # label requis par le sidecar Grafana
+data:
+  netpulse.json: |
+    {
+      "id": null,
+      "title": "NetPulse — Surveillance Réseau Kubernetes",
+      "tags": ["netpulse", "cilium", "kubernetes"],
+      "timezone": "browser",
+      "schemaVersion": 36,
+      "version": 1,
+      "refresh": "15s",
+      "panels": [
+        {
+          "id": 1,
+          "title": "Flux réseau totaux (1h)",
+          "type": "stat",
+          "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+          "targets": [{
+            "expr": "sum(increase(hubble_flows_processed_total[1h]))",
+            "legendFormat": "Flux totaux"
+          }],
+          "options": { "colorMode": "background", "graphMode": "area" }
+        },
+        {
+          "id": 2,
+          "title": "Flux DROPpés (Cilium policy violations)",
+          "type": "stat",
+          "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+          "targets": [{
+            "expr": "sum(increase(hubble_drop_total[1h]))",
+            "legendFormat": "Drops"
+          }],
+          "options": {
+            "colorMode": "background",
+            "thresholds": {
+              "steps": [
+                { "value": 0,  "color": "green" },
+                { "value": 5,  "color": "yellow" },
+                { "value": 20, "color": "red" }
+              ]
+            }
+          }
+        },
+        {
+          "id": 3,
+          "title": "Alertes actives (NetPulse app)",
+          "type": "stat",
+          "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+          "targets": [{
+            "expr": "netpulse_active_alerts",
+            "legendFormat": "Alertes"
+          }]
+        },
+        {
+          "id": 4,
+          "title": "CPU nœud worker (%)",
+          "type": "stat",
+          "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+          "targets": [{
+            "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode='idle'}[5m])) * 100)",
+            "legendFormat": "CPU %"
+          }]
+        },
+        {
+          "id": 5,
+          "title": "Flux réseau Hubble — ALLOW vs DROP (par minute)",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+          "targets": [
+            {
+              "expr": "rate(hubble_flows_processed_total{verdict='ALLOW'}[1m]) * 60",
+              "legendFormat": "ALLOW"
+            },
+            {
+              "expr": "rate(hubble_flows_processed_total{verdict='DROPPED'}[1m]) * 60",
+              "legendFormat": "DROP"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" } },
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "DROP" },
+                "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+              }
+            ]
+          }
+        },
+        {
+          "id": 6,
+          "title": "Drops par raison (Cilium)",
+          "type": "piechart",
+          "gridPos": { "x": 12, "y": 4, "w": 6, "h": 8 },
+          "targets": [{
+            "expr": "sum by (reason) (increase(hubble_drop_total[1h]))",
+            "legendFormat": "{{reason}}"
+          }]
+        },
+        {
+          "id": 7,
+          "title": "HTTP requests (NetPulse API)",
+          "type": "timeseries",
+          "gridPos": { "x": 18, "y": 4, "w": 6, "h": 8 },
+          "targets": [{
+            "expr": "rate(netpulse_network_events_total[1m]) * 60",
+            "legendFormat": "{{verdict}}"
+          }]
+        },
+        {
+          "id": 8,
+          "title": "Trafic réseau nœud (RX / TX)",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+          "targets": [
+            {
+              "expr": "rate(node_network_receive_bytes_total{device!='lo'}[1m]) * 8 / 1e6",
+              "legendFormat": "RX Mbps — {{device}}"
+            },
+            {
+              "expr": "rate(node_network_transmit_bytes_total{device!='lo'}[1m]) * 8 / 1e6",
+              "legendFormat": "TX Mbps — {{device}}"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "title": "Mémoire nœud (%)",
+          "type": "gauge",
+          "gridPos": { "x": 12, "y": 12, "w": 6, "h": 8 },
+          "targets": [{
+            "expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100",
+            "legendFormat": "RAM %"
+          }],
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "thresholds": {
+              "steps": [
+                { "value": 0,  "color": "green" },
+                { "value": 70, "color": "yellow" },
+                { "value": 90, "color": "red" }
+              ]
+            }
+          }
+        },
+        {
+          "id": 10,
+          "title": "Pods K8s (running vs non-running)",
+          "type": "timeseries",
+          "gridPos": { "x": 18, "y": 12, "w": 6, "h": 8 },
+          "targets": [
+            {
+              "expr": "count(kube_pod_status_phase{phase='Running'})",
+              "legendFormat": "Running"
+            },
+            {
+              "expr": "count(kube_pod_status_phase{phase!='Running'})",
+              "legendFormat": "Autres"
+            }
+          ]
+        }
+      ]
+    }
+
+---
+# ─── ConfigMap pour provisionner la datasource Prometheus ────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource-prometheus
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+data:
+  datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://kube-prometheus-stack-prometheus:9090
+        access: proxy
+        isDefault: true
+        editable: true

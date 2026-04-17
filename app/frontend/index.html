@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NetPulse — Surveillance Réseau Kubernetes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:      #0a0e17;
+      --surface: #0f1520;
+      --card:    #141c2e;
+      --border:  rgba(99,179,237,0.12);
+      --teal:    #00d9c0;
+      --blue:    #3b82f6;
+      --purple:  #8b5cf6;
+      --red:     #f43f5e;
+      --amber:   #f59e0b;
+      --green:   #10b981;
+      --text:    #e2e8f0;
+      --muted:   #64748b;
+      --mono:    'JetBrains Mono', monospace;
+      --sans:    'Space Grotesk', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+    }
+
+    /* ─── Header ─────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 28px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: -0.5px;
+    }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--teal), var(--blue));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+    .logo span { color: var(--teal); }
+    .header-badges { display: flex; gap: 8px; align-items: center; }
+    .badge {
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--mono);
+      border: 1px solid;
+      letter-spacing: 0.5px;
+    }
+    .badge-cilium  { color: var(--teal);   border-color: rgba(0,217,192,0.3);  background: rgba(0,217,192,0.08); }
+    .badge-hubble  { color: var(--purple);  border-color: rgba(139,92,246,0.3); background: rgba(139,92,246,0.08); }
+    .badge-prom    { color: var(--amber);   border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.08); }
+    .badge-grafana { color: var(--orange,#f97316); border-color: rgba(249,115,22,0.3); background: rgba(249,115,22,0.08); }
+    .live-dot {
+      width: 8px; height: 8px;
+      background: var(--green);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.5); }
+      50%      { box-shadow: 0 0 0 6px rgba(16,185,129,0); }
+    }
+
+    /* ─── Layout ──────────────────────────────────── */
+    .container { padding: 24px 28px; }
+
+    /* ─── Stat cards ──────────────────────────────── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+    }
+    .stat-card.teal::before   { background: var(--teal); }
+    .stat-card.blue::before   { background: var(--blue); }
+    .stat-card.red::before    { background: var(--red); }
+    .stat-card.green::before  { background: var(--green); }
+    .stat-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      margin-bottom: 8px;
+      font-family: var(--mono);
+    }
+    .stat-value {
+      font-size: 32px;
+      font-weight: 700;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+    .stat-card.teal  .stat-value { color: var(--teal); }
+    .stat-card.blue  .stat-value { color: var(--blue); }
+    .stat-card.red   .stat-value { color: var(--red); }
+    .stat-card.green .stat-value { color: var(--green); }
+    .stat-sub { font-size: 12px; color: var(--muted); }
+
+    /* ─── Grid principal ──────────────────────────── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--teal);
+    }
+
+    /* ─── Canvas (flux réseau) ────────────────────── */
+    #network-canvas {
+      display: block;
+      width: 100%;
+      height: 300px;
+      background: var(--bg);
+    }
+
+    /* ─── Tableau des flux ────────────────────────── */
+    .flows-table { width: 100%; border-collapse: collapse; }
+    .flows-table th {
+      padding: 10px 16px;
+      text-align: left;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      font-family: var(--mono);
+      background: rgba(255,255,255,0.02);
+      border-bottom: 1px solid var(--border);
+    }
+    .flows-table td {
+      padding: 10px 16px;
+      font-size: 12px;
+      font-family: var(--mono);
+      border-bottom: 1px solid rgba(99,179,237,0.06);
+    }
+    .flows-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .verdict {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .verdict-ALLOW { background: rgba(16,185,129,0.15); color: var(--green); }
+    .verdict-DROP  { background: rgba(244,63,94,0.15);  color: var(--red); }
+    .verdict-AUDIT { background: rgba(245,158,11,0.15); color: var(--amber); }
+    .proto {
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      background: rgba(99,179,237,0.1);
+      color: var(--blue);
+    }
+
+    /* ─── Panneau alertes ─────────────────────────── */
+    .alerts-list { padding: 12px; display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }
+    .alert-item {
+      display: flex;
+      gap: 10px;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .alert-item.critical { border-color: rgba(244,63,94,0.3);  background: rgba(244,63,94,0.08); }
+    .alert-item.warning  { border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.08); }
+    .alert-item.info     { border-color: rgba(59,130,246,0.3); background: rgba(59,130,246,0.08); }
+    .alert-severity { font-size: 10px; font-weight: 700; font-family: var(--mono); text-transform: uppercase; }
+    .critical .alert-severity { color: var(--red); }
+    .warning  .alert-severity { color: var(--amber); }
+    .info     .alert-severity { color: var(--blue); }
+    .alert-title { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+    .alert-msg   { font-size: 11px; color: var(--muted); line-height: 1.4; }
+    .alert-time  { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: var(--mono); }
+
+    /* ─── Row bas ─────────────────────────────────── */
+    .bottom-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    /* ─── Graphique métriques nœuds ───────────────── */
+    #metrics-canvas {
+      display: block;
+      width: 100%;
+      height: 200px;
+    }
+
+    /* ─── Donut protocoles ────────────────────────── */
+    #proto-canvas {
+      display: block;
+      width: 100%;
+      height: 200px;
+    }
+
+    /* ─── Barre de protocole ──────────────────────── */
+    .proto-bar { padding: 16px 20px; }
+    .proto-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .proto-name { font-family: var(--mono); font-size: 12px; width: 60px; color: var(--muted); }
+    .proto-track { flex: 1; height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
+    .proto-fill  { height: 100%; border-radius: 3px; transition: width 0.8s ease; }
+    .proto-count { font-family: var(--mono); font-size: 11px; color: var(--muted); width: 30px; text-align: right; }
+
+    /* ─── Liens Grafana/Hubble ────────────────────── */
+    .links-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .ext-link {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      text-decoration: none;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      transition: border-color 0.2s, background 0.2s;
+      cursor: pointer;
+    }
+    .ext-link:hover { border-color: var(--teal); background: rgba(0,217,192,0.06); }
+    .ext-icon { font-size: 18px; }
+
+    /* ─── Scrollbar ───────────────────────────────── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(99,179,237,0.2); border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">⬡</div>
+    Net<span>Pulse</span>
+  </div>
+  <div class="header-badges">
+    <span class="badge badge-cilium">● Cilium</span>
+    <span class="badge badge-hubble">◈ Hubble</span>
+    <span class="badge badge-prom">◉ Prometheus</span>
+    <span class="badge badge-grafana">▦ Grafana</span>
+    <div class="live-dot" title="Live"></div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Stats Row -->
+  <div class="stats-row">
+    <div class="stat-card teal">
+      <div class="stat-label">Flux totaux (1h)</div>
+      <div class="stat-value" id="total-flows">—</div>
+      <div class="stat-sub">événements réseau</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Flux ALLOW</div>
+      <div class="stat-value" id="total-allow">—</div>
+      <div class="stat-sub">autorisés par Cilium</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-label">Flux DROP</div>
+      <div class="stat-value" id="total-drop">—</div>
+      <div class="stat-sub">bloqués par politique</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-label">Latence moy.</div>
+      <div class="stat-value" id="avg-latency">—</div>
+      <div class="stat-sub">millisecondes</div>
+    </div>
+  </div>
+
+  <!-- Main Grid -->
+  <div class="main-grid">
+
+    <!-- Visualisation flux réseau (canvas) -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-dot"></div>
+          Carte des flux réseau — Hubble / Cilium
+        </div>
+        <span style="font-size:11px;color:var(--muted);font-family:var(--mono)">live</span>
+      </div>
+      <canvas id="network-canvas"></canvas>
+    </div>
+
+    <!-- Alertes -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-dot" style="background:var(--red)"></div>
+          Alertes actives
+        </div>
+        <span id="alert-count" style="font-size:11px;color:var(--red);font-family:var(--mono)">—</span>
+      </div>
+      <div class="alerts-list" id="alerts-list">
+        <div style="padding:20px;text-align:center;color:var(--muted)">Chargement...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Grid -->
+  <div class="bottom-grid">
+
+    <!-- Métriques CPU/Net nœud -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-dot" style="background:var(--blue)"></div>
+          Métriques nœud worker — 1h
+        </div>
+      </div>
+      <canvas id="metrics-canvas"></canvas>
+    </div>
+
+    <!-- Protocoles -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-dot" style="background:var(--purple)"></div>
+          Protocoles observés
+        </div>
+      </div>
+      <div class="proto-bar" id="proto-bars">
+        <div style="padding:20px;text-align:center;color:var(--muted)">Chargement...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tableau des flux -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-header">
+      <div class="card-title">
+        <div class="card-dot" style="background:var(--amber)"></div>
+        Flux réseau récents
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="filterFlows('ALL')"   id="btn-ALL"   class="filter-btn active">Tous</button>
+        <button onclick="filterFlows('ALLOW')" id="btn-ALLOW" class="filter-btn">ALLOW</button>
+        <button onclick="filterFlows('DROP')"  id="btn-DROP"  class="filter-btn">DROP</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="flows-table">
+        <thead>
+          <tr>
+            <th>Source Pod</th>
+            <th>Destination</th>
+            <th>Namespace</th>
+            <th>Protocole</th>
+            <th>Verdict</th>
+            <th>Bytes</th>
+            <th>Latence</th>
+            <th>Heure</th>
+          </tr>
+        </thead>
+        <tbody id="flows-body">
+          <tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted)">Chargement...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Liens externes -->
+  <div class="links-row">
+    <a class="ext-link" onclick="window.open('http://'+window.location.hostname+':31000','_blank')">
+      <span class="ext-icon">▦</span> Grafana Dashboard
+    </a>
+    <a class="ext-link" onclick="alert('Hubble UI: kubectl port-forward -n kube-system svc/hubble-ui 12000:80')">
+      <span class="ext-icon">◈</span> Hubble UI
+    </a>
+    <a class="ext-link" onclick="window.open('http://'+window.location.hostname+':31001','_blank')">
+      <span class="ext-icon">◉</span> Prometheus
+    </a>
+    <a class="ext-link" onclick="window.open('/metrics','_blank')">
+      <span class="ext-icon">⊞</span> App Metrics
+    </a>
+  </div>
+
+</div>
+
+<style>
+  .filter-btn {
+    padding: 4px 10px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: var(--mono);
+    font-weight: 600;
+    transition: all 0.15s;
+  }
+  .filter-btn:hover, .filter-btn.active {
+    background: rgba(0,217,192,0.1);
+    border-color: var(--teal);
+    color: var(--teal);
+  }
+</style>
+
+<script>
+const API = '';
+let allFlows = [];
+let currentFilter = 'ALL';
+
+// ─── Fetch stats ───────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const r = await fetch(`${API}/api/stats`);
+    const d = await r.json();
+    const t = d.totals;
+    document.getElementById('total-flows').textContent = t.total_flows || '0';
+    document.getElementById('total-allow').textContent = t.allowed || '0';
+    document.getElementById('total-drop').textContent  = t.dropped || '0';
+    document.getElementById('avg-latency').textContent = (t.avg_latency || '0') + 'ms';
+
+    // Protocoles
+    renderProtoBars(d.protocols || []);
+  } catch (e) {
+    console.error('Stats error', e);
+  }
+}
+
+// ─── Fetch flows ───────────────────────────────────────────────
+async function loadFlows() {
+  try {
+    const r = await fetch(`${API}/api/flows?limit=100`);
+    allFlows = await r.json();
+    renderFlows();
+  } catch (e) {}
+}
+
+function filterFlows(verdict) {
+  currentFilter = verdict;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`btn-${verdict}`).classList.add('active');
+  renderFlows();
+}
+
+function renderFlows() {
+  const flows = currentFilter === 'ALL' ? allFlows : allFlows.filter(f => f.verdict === currentFilter);
+  const tbody = document.getElementById('flows-body');
+  if (!flows.length) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted)">Aucun flux</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = flows.slice(0, 30).map(f => `
+    <tr>
+      <td style="color:#e2e8f0">${f.pod_src}</td>
+      <td style="color:#e2e8f0">${f.pod_dst}</td>
+      <td style="color:var(--muted)">${f.namespace}</td>
+      <td><span class="proto">${f.protocol}</span></td>
+      <td><span class="verdict verdict-${f.verdict}">${f.verdict}</span></td>
+      <td style="color:var(--muted)">${(f.bytes/1024).toFixed(1)}K</td>
+      <td style="color:${f.latency > 30 ? 'var(--amber)' : 'var(--muted)'}">${(f.latency||0).toFixed(1)}ms</td>
+      <td style="color:var(--muted)">${new Date(f.created_at).toLocaleTimeString('fr-CA')}</td>
+    </tr>
+  `).join('');
+}
+
+// ─── Fetch alertes ─────────────────────────────────────────────
+async function loadAlerts() {
+  try {
+    const r = await fetch(`${API}/api/alerts`);
+    const alerts = await r.json();
+    const active = alerts.filter(a => !a.resolved);
+    document.getElementById('alert-count').textContent = active.length + ' active';
+    document.getElementById('alerts-list').innerHTML = active.length === 0
+      ? `<div style="padding:20px;text-align:center;color:var(--muted)">✓ Aucune alerte active</div>`
+      : active.map(a => `
+        <div class="alert-item ${a.severity}" onclick="resolveAlert(${a.id}, this)">
+          <div>
+            <div class="alert-severity">${a.severity}</div>
+          </div>
+          <div style="flex:1">
+            <div class="alert-title">${a.title}</div>
+            <div class="alert-msg">${a.message}</div>
+            <div class="alert-time">Pod: ${a.pod} · ${new Date(a.created_at).toLocaleString('fr-CA')}</div>
+          </div>
+        </div>
+      `).join('');
+  } catch (e) {}
+}
+
+async function resolveAlert(id, el) {
+  await fetch(`${API}/api/alerts/${id}/resolve`, { method: 'POST' });
+  el.style.opacity = '0.3';
+  el.style.pointerEvents = 'none';
+  setTimeout(loadAlerts, 1000);
+}
+
+// ─── Canvas : carte des flux réseau ────────────────────────────
+const networkCanvas = document.getElementById('network-canvas');
+const nc = networkCanvas.getContext('2d');
+
+const nodes = [
+  { id: 'frontend',     x: 0.15, y: 0.5,  color: '#3b82f6', label: 'frontend' },
+  { id: 'backend',      x: 0.5,  y: 0.5,  color: '#00d9c0', label: 'backend'  },
+  { id: 'postgres',     x: 0.85, y: 0.35, color: '#8b5cf6', label: 'postgres' },
+  { id: 'prometheus',   x: 0.5,  y: 0.15, color: '#f59e0b', label: 'prometheus' },
+  { id: 'grafana',      x: 0.15, y: 0.2,  color: '#f97316', label: 'grafana'  },
+  { id: 'cilium-agent', x: 0.85, y: 0.7,  color: '#10b981', label: 'cilium'   },
+  { id: 'unknown-pod',  x: 0.5,  y: 0.82, color: '#f43f5e', label: '⚠ unknown' },
+];
+
+const edges = [
+  { src: 'frontend',   dst: 'backend',    verdict: 'ALLOW', animated: true },
+  { src: 'backend',    dst: 'postgres',   verdict: 'ALLOW', animated: true },
+  { src: 'frontend',   dst: 'postgres',   verdict: 'DROP',  animated: false },
+  { src: 'prometheus', dst: 'backend',    verdict: 'ALLOW', animated: true },
+  { src: 'grafana',    dst: 'prometheus', verdict: 'ALLOW', animated: true },
+  { src: 'unknown-pod',dst: 'backend',    verdict: 'DROP',  animated: true },
+  { src: 'cilium-agent',dst:'backend',    verdict: 'ALLOW', animated: false },
+];
+
+let particles = [];
+let animFrame = 0;
+
+function initParticles() {
+  particles = [];
+  edges.filter(e => e.animated && e.verdict === 'ALLOW').forEach(edge => {
+    for (let i = 0; i < 3; i++) {
+      particles.push({ edge, t: Math.random(), speed: 0.003 + Math.random() * 0.002 });
+    }
+  });
+  edges.filter(e => e.animated && e.verdict === 'DROP').forEach(edge => {
+    particles.push({ edge, t: Math.random(), speed: 0.004, dying: true });
+  });
+}
+
+function drawNetwork() {
+  const W = networkCanvas.offsetWidth;
+  const H = networkCanvas.offsetHeight;
+  networkCanvas.width  = W;
+  networkCanvas.height = H;
+  nc.clearRect(0, 0, W, H);
+
+  const n = (node) => ({ x: node.x * W, y: node.y * H });
+
+  // Arêtes
+  edges.forEach(edge => {
+    const src = nodes.find(n => n.id === edge.src);
+    const dst = nodes.find(n => n.id === edge.dst);
+    if (!src || !dst) return;
+    const s = n(src), d = n(dst);
+    nc.beginPath();
+    nc.moveTo(s.x, s.y);
+    nc.lineTo(d.x, d.y);
+    nc.strokeStyle = edge.verdict === 'ALLOW'
+      ? 'rgba(0,217,192,0.15)' : 'rgba(244,63,94,0.25)';
+    nc.lineWidth = edge.verdict === 'ALLOW' ? 1 : 1.5;
+    if (edge.verdict === 'DROP') { nc.setLineDash([4,4]); }
+    nc.stroke();
+    nc.setLineDash([]);
+  });
+
+  // Particules
+  particles.forEach(p => {
+    const src = nodes.find(n => n.id === p.edge.src);
+    const dst = nodes.find(n => n.id === p.edge.dst);
+    if (!src || !dst) return;
+    const s = n(src), d = n(dst);
+    const x = s.x + (d.x - s.x) * p.t;
+    const y = s.y + (d.y - s.y) * p.t;
+    nc.beginPath();
+    nc.arc(x, y, p.dying ? 3 : 2.5, 0, Math.PI * 2);
+    nc.fillStyle = p.dying ? 'rgba(244,63,94,0.9)' : 'rgba(0,217,192,0.85)';
+    nc.fill();
+    p.t += p.speed;
+    if (p.t > 1) p.t = 0;
+  });
+
+  // Nœuds
+  nodes.forEach(node => {
+    const pos = n(node);
+    // Glow
+    const grad = nc.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, 20);
+    grad.addColorStop(0, node.color + '33');
+    grad.addColorStop(1, 'transparent');
+    nc.beginPath();
+    nc.arc(pos.x, pos.y, 20, 0, Math.PI * 2);
+    nc.fillStyle = grad;
+    nc.fill();
+    // Cercle
+    nc.beginPath();
+    nc.arc(pos.x, pos.y, 10, 0, Math.PI * 2);
+    nc.fillStyle = node.color;
+    nc.fill();
+    nc.strokeStyle = 'rgba(255,255,255,0.2)';
+    nc.lineWidth = 1;
+    nc.stroke();
+    // Label
+    nc.fillStyle = '#e2e8f0';
+    nc.font = '11px JetBrains Mono, monospace';
+    nc.textAlign = 'center';
+    nc.fillText(node.label, pos.x, pos.y + 24);
+  });
+}
+
+function animate() {
+  drawNetwork();
+  requestAnimationFrame(animate);
+}
+
+// ─── Canvas : métriques nœud ───────────────────────────────────
+async function renderNodeMetrics() {
+  try {
+    const r = await fetch(`${API}/api/nodes/metrics`);
+    const data = (await r.json()).slice(0, 20).reverse();
+    const canvas = document.getElementById('metrics-canvas');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.offsetWidth;
+    canvas.width  = W;
+    canvas.height = 200;
+    const H = 200;
+    const pad = { top: 20, right: 20, bottom: 30, left: 40 };
+    const gW = W - pad.left - pad.right;
+    const gH = H - pad.top  - pad.bottom;
+
+    ctx.clearRect(0, 0, W, H);
+    if (!data.length) return;
+
+    // Grille
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = pad.top + gH - (gH * i / 4);
+      ctx.beginPath();
+      ctx.moveTo(pad.left, y);
+      ctx.lineTo(pad.left + gW, y);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.font = '10px JetBrains Mono, monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText((i * 25) + '%', pad.left - 6, y + 3);
+    }
+
+    const plot = (key, color) => {
+      ctx.beginPath();
+      data.forEach((d, i) => {
+        const x = pad.left + (i / (data.length - 1)) * gW;
+        const y = pad.top + gH - (d[key] / 100) * gH;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    };
+
+    plot('cpu_pct', '#3b82f6');
+    plot('mem_pct', '#8b5cf6');
+    plot('net_rx_mbps', '#00d9c0');
+
+    // Légende
+    const legend = [['CPU', '#3b82f6'], ['MEM', '#8b5cf6'], ['NET RX', '#00d9c0']];
+    legend.forEach(([label, color], i) => {
+      const x = pad.left + i * 80;
+      ctx.beginPath();
+      ctx.moveTo(x, H - 8); ctx.lineTo(x + 16, H - 8);
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.font = '10px JetBrains Mono, monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(label, x + 20, H - 5);
+    });
+  } catch (e) {}
+}
+
+// ─── Barres de protocoles ──────────────────────────────────────
+function renderProtoBars(protocols) {
+  if (!protocols.length) return;
+  const max = Math.max(...protocols.map(p => parseInt(p.count)));
+  const colors = { HTTP: '#3b82f6', TCP: '#00d9c0', ICMP: '#8b5cf6', UDP: '#f59e0b' };
+  document.getElementById('proto-bars').innerHTML = protocols.map(p => `
+    <div class="proto-row">
+      <div class="proto-name">${p.protocol}</div>
+      <div class="proto-track">
+        <div class="proto-fill" style="width:${(p.count/max*100).toFixed(0)}%;background:${colors[p.protocol]||'#64748b'}"></div>
+      </div>
+      <div class="proto-count">${p.count}</div>
+    </div>
+  `).join('');
+}
+
+// ─── Init ──────────────────────────────────────────────────────
+async function init() {
+  initParticles();
+  animate();
+  await Promise.all([loadStats(), loadFlows(), loadAlerts(), renderNodeMetrics()]);
+}
+
+init();
+setInterval(() => { loadStats(); loadFlows(); loadAlerts(); renderNodeMetrics(); }, 15000);
+</script>
+</body>
+</html>

@@ -1,0 +1,120 @@
+# 05-cilium-policies.yaml — NetPulse CiliumNetworkPolicies
+# CORRECTION : regles L7 HTTP retirees — bloquaient nginx proxy vers backend
+# Regles L4 TCP uniquement — compatibles avec proxy Nginx
+
+# Politique par defaut : TOUT REFUSER dans netpulse
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: netpulse
+spec:
+  endpointSelector: {}
+  ingress: []
+  egress: []
+
+---
+# Frontend → Backend AUTORISE (TCP 3000)
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-frontend-to-backend
+  namespace: netpulse
+spec:
+  endpointSelector:
+    matchLabels:
+      app: backend
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: frontend
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+
+---
+# Backend → PostgreSQL AUTORISE (TCP 5432)
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-backend-to-postgres
+  namespace: netpulse
+spec:
+  endpointSelector:
+    matchLabels:
+      app: postgres
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: backend
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+
+---
+# Prometheus → Backend AUTORISE (scraping metriques TCP 3000)
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-prometheus-scrape-backend
+  namespace: netpulse
+spec:
+  endpointSelector:
+    matchLabels:
+      app: backend
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+
+---
+# DNS egress autorise (resolution interne K8s)
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: netpulse
+spec:
+  endpointSelector: {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: netpulse
+
+---
+# NodePorts accessibles depuis internet (EC2 public IP)
+apiVersion: "cilium.io/v2"
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: allow-nodeport-ingress
+spec:
+  endpointSelector:
+    matchLabels:
+      reserved:world: "true"
+  ingress:
+    - toPorts:
+        - ports:
+            - port: "30000"
+              protocol: TCP
+            - port: "30001"
+              protocol: TCP
+            - port: "31000"
+              protocol: TCP
+            - port: "31001"
+              protocol: TCP
